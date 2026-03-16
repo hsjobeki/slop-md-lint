@@ -1,13 +1,17 @@
 # slop-md-lint
 
-Style linter for technical markdown. Flags unreviewed AI-generated docs
+Style linter for technical markdown. Flags unreviewed LLM-generated docs
 by accumulated score across five rule levels (vocabulary, phrases,
 formatting, structure, information density). Single Python file, no
-dependencies. Not an AI detector. Scoped to technical docs; blog posts,
+dependencies. Not an LLM detector. Scoped to technical docs; blog posts,
 essays, and chat messages are out of scope.
 
-Written by AI, reviewed by a human. Does not replace review. Catches the
-obvious stuff before a human has to look at it.
+> [!IMPORTANT]
+> This tool was written by an LLM and reviewed by a human.
+>
+> - Does not replace human review
+> - Gates LLM-generated PRs by flagging obvious slop
+> - Feed the results back into your LLM, rebase, submit cleaner PRs
 
 ## How it works
 
@@ -38,11 +42,11 @@ Exit 0 means clean. Exit 1 means flagged files.
 
 ## What it catches
 
-Five detection levels, each targeting a different axis of AI writing habits.
+Five detection levels, each targeting a different axis of LLM writing habits.
 
 ### Level 1: Vocabulary (64 stems, weight 1.0 each)
 
-Word stems that are fine on their own but accumulate in AI output. Each stem
+Word stems that are fine on their own but accumulate in LLM output. Each stem
 matches all inflected forms (e.g. "leverag" catches leverage, leverages,
 leveraged, leveraging). Five groups:
 
@@ -56,7 +60,7 @@ leveraged, leveraging). Five groups:
 
 ### Level 2: Phrases (112 patterns, weight 2.0 each)
 
-Multi-word patterns that are strong AI indicators. Thirteen groups:
+Multi-word patterns that are strong LLM indicators. Thirteen groups:
 
 | Group | Count | What it catches |
 |---|---|---|
@@ -76,7 +80,7 @@ Multi-word patterns that are strong AI indicators. Thirteen groups:
 
 ### Level 3: Formatting (5 rules, weight 1.0-1.5)
 
-Punctuation and markdown patterns that betray AI authorship.
+Punctuation and markdown patterns that betray LLM authorship.
 
 | Rule | Weight | Trigger | Hard fail |
 |---|---|---|---|
@@ -87,7 +91,7 @@ Punctuation and markdown patterns that betray AI authorship.
 | `emoji_in_docs` | 1.0 | emoji characters | no (3+ to trigger) |
 
 Em dashes and bold-colon lists are hard fails. Humans writing technical
-docs do not produce these patterns. AI does, consistently.
+docs do not produce these patterns. LLMs do, consistently.
 
 ### Level 4: Structural (6 checks, weight 2.0-3.0)
 
@@ -195,7 +199,7 @@ install `tomli` or skip the config file (defaults work without it).
 
 ```yaml
 # GitHub Actions
-- name: Check docs for AI slop
+- name: Check docs for LLM slop
   run: python3 slop_md_lint.py docs/
 ```
 
@@ -216,7 +220,7 @@ accumulated scoring (weighted totals normalized by document length), cross-secti
 analysis, sentence-start monotony detection, paragraph density analysis, tricolon
 counting, or conditional formatting (`- **Word:**` is bad, but `**--flag**:` is fine).
 
-The two tools complement each other: Vale for general style, this for AI-specific
+The two tools complement each other: Vale for general style, this for LLM-specific
 detection.
 
 ## Limitations
