@@ -37,19 +37,19 @@ VOCABULARY_RULES: dict[str, list[str]] = {
     # delving).
     "ai_classics": [
         "delve",
-        "elevat",          # elevate, elevates, elevated, elevating, elevation
+        "elevat",  # elevate, elevates, elevated, elevating, elevation
         "empower",
         "foster",
         "harness",
         "pivotal",
         "game-changer",
         "paradigm",
-        "synerg",          # synergy, synergies, synergistic
+        "synerg",  # synergy, synergies, synergistic
         "holistic",
-        "proactiv",        # proactive, proactively
+        "proactiv",  # proactive, proactively
         "actionable",
         "unlock",
-        "navigat",         # navigate, navigates, navigating, navigation
+        "navigat",  # navigate, navigates, navigating, navigation
         "realm",
         "landscape",
         "tapestry",
@@ -61,10 +61,10 @@ VOCABULARY_RULES: dict[str, list[str]] = {
     ],
     # Corporate/marketing tone that doesn't belong in technical docs
     "corporate_marketing": [
-        "streamlin",       # streamline, streamlines, streamlined, streamlining
-        "leverag",         # leverage, leverages, leveraged, leveraging
-        "utiliz",          # utilize, utilizes, utilized, utilizing, utilization
-        "facilitat",       # facilitate, facilitates, facilitating, facilitation
+        "streamlin",  # streamline, streamlines, streamlined, streamlining
+        "leverag",  # leverage, leverages, leveraged, leveraging
+        "utiliz",  # utilize, utilizes, utilized, utilizing, utilization
+        "facilitat",  # facilitate, facilitates, facilitating, facilitation
         "comprehensive",
         "robust",
         "seamless",
@@ -72,10 +72,10 @@ VOCABULARY_RULES: dict[str, list[str]] = {
         "state-of-the-art",
         "best-in-class",
         "world-class",
-        "intuitiv",        # intuitive, intuitively
+        "intuitiv",  # intuitive, intuitively
         "effortless",
-        "sophisticat",     # sophisticated, sophistication
-        "versatil",        # versatile, versatility
+        "sophisticat",  # sophisticated, sophistication
+        "versatil",  # versatile, versatility
         "performant",
         "optimal",
         "ecosystem",
@@ -98,7 +98,7 @@ VOCABULARY_RULES: dict[str, list[str]] = {
     ],
     # Meticulous/thorough family -- AI's self-congratulatory vocabulary
     "self_congratulatory": [
-        "meticulou",       # meticulous, meticulously
+        "meticulou",  # meticulous, meticulously
         "thoughtful",
         "elegantly",
         "graceful",
@@ -397,6 +397,7 @@ ADJ_PAIR_WEIGHT = 2.0
 # Default configuration as TOML
 # ============================================================================
 
+
 def _generate_default_toml() -> str:
     """Build the default TOML config string from the actual rule constants.
 
@@ -472,13 +473,23 @@ DEFAULT_TOML = _generate_default_toml()
 _DEFAULT_DATA: dict = tomllib.loads(DEFAULT_TOML)
 
 # Known top-level TOML keys (for unknown-key warnings)
-_KNOWN_KEYS = {"threshold", "min_words_to_score", "weights", "vocabulary",
-               "phrases", "formatting", "structural", "density", "hard_fail"}
+_KNOWN_KEYS = {
+    "threshold",
+    "min_words_to_score",
+    "weights",
+    "vocabulary",
+    "phrases",
+    "formatting",
+    "structural",
+    "density",
+    "hard_fail",
+}
 
 
 # ============================================================================
 # Configuration
 # ============================================================================
+
 
 @dataclass
 class Config:
@@ -491,6 +502,7 @@ class Config:
     Field defaults are placeholders -- __post_init__ immediately overwrites
     them from _DEFAULT_DATA.
     """
+
     threshold: float = 0.0
     min_words_to_score: int = 0
 
@@ -537,7 +549,9 @@ class Config:
                 print(f"Warning: unknown config key '{key}'", file=sys.stderr)
 
         self.threshold = data.get("threshold", self.threshold)
-        self.min_words_to_score = data.get("min_words_to_score", self.min_words_to_score)
+        self.min_words_to_score = data.get(
+            "min_words_to_score", self.min_words_to_score
+        )
 
         if "weights" in data:
             w = data["weights"]
@@ -547,26 +561,36 @@ class Config:
             self.structural_weight = w.get("structural", self.structural_weight)
             self.tricolon_weight = w.get("tricolon", self.tricolon_weight)
             self.adj_pair_weight = w.get("adj_pair", self.adj_pair_weight)
-            self.density_paragraph_weight = w.get("density_paragraph", self.density_paragraph_weight)
+            self.density_paragraph_weight = w.get(
+                "density_paragraph", self.density_paragraph_weight
+            )
 
         if "vocabulary" in data:
             for group, enabled in data["vocabulary"].get("enabled", {}).items():
                 self.vocabulary_enabled[group] = enabled
-            self.extra_vocabulary = list(data["vocabulary"].get("extra", self.extra_vocabulary))
-            self.ignore_vocabulary = list(data["vocabulary"].get("ignore", self.ignore_vocabulary))
+            self.extra_vocabulary = list(
+                data["vocabulary"].get("extra", self.extra_vocabulary)
+            )
+            self.ignore_vocabulary = list(
+                data["vocabulary"].get("ignore", self.ignore_vocabulary)
+            )
 
         if "phrases" in data:
             for group, enabled in data["phrases"].get("enabled", {}).items():
                 self.phrase_enabled[group] = enabled
             self.extra_phrases = list(data["phrases"].get("extra", self.extra_phrases))
-            self.ignore_phrases = list(data["phrases"].get("ignore", self.ignore_phrases))
+            self.ignore_phrases = list(
+                data["phrases"].get("ignore", self.ignore_phrases)
+            )
 
         if "formatting" in data:
             for rule, enabled in data["formatting"].get("enabled", {}).items():
                 self.formatting_enabled[rule] = enabled
 
         if "structural" in data:
-            self.structural_enabled = data["structural"].get("enabled", self.structural_enabled)
+            self.structural_enabled = data["structural"].get(
+                "enabled", self.structural_enabled
+            )
             for key, val in data["structural"].get("thresholds", {}).items():
                 self.structural[key] = val
 
@@ -574,8 +598,12 @@ class Config:
             self.density_enabled = data["density"].get("enabled", self.density_enabled)
 
         if "hard_fail" in data:
-            self.hard_fail_rules = list(data["hard_fail"].get("add", self.hard_fail_rules))
-            self.no_hard_fail_rules = list(data["hard_fail"].get("remove", self.no_hard_fail_rules))
+            self.hard_fail_rules = list(
+                data["hard_fail"].get("add", self.hard_fail_rules)
+            )
+            self.no_hard_fail_rules = list(
+                data["hard_fail"].get("remove", self.no_hard_fail_rules)
+            )
 
     @classmethod
     def from_toml_string(cls, text: str) -> "Config":
@@ -598,9 +626,11 @@ class Config:
 # Compiled patterns cache
 # ============================================================================
 
+
 @dataclass
 class CompiledPatterns:
     """Pre-compiled regex patterns for a given Config. Built once, reused across files."""
+
     vocabulary: list[tuple[str, re.Pattern]]
     phrases: list[tuple[str, re.Pattern]]
     formatting: list[tuple[str, re.Pattern, dict]]
@@ -635,10 +665,7 @@ def _build_phrase_patterns(
             phrases.extend(phrase_list)
     phrases.extend(config.extra_phrases)
     phrases = [p for p in phrases if p not in ignored]
-    return [
-        (phrase, re.compile(phrase, re.IGNORECASE))
-        for phrase in phrases
-    ]
+    return [(phrase, re.compile(phrase, re.IGNORECASE)) for phrase in phrases]
 
 
 def _build_formatting_patterns(
@@ -670,10 +697,7 @@ def _build_formatting_patterns(
 
 def _build_vague_patterns() -> list[tuple[str, re.Pattern]]:
     """Build compiled vague-quantifier patterns."""
-    return [
-        (pat, re.compile(pat, re.IGNORECASE))
-        for pat in VAGUE_PHRASES
-    ]
+    return [(pat, re.compile(pat, re.IGNORECASE)) for pat in VAGUE_PHRASES]
 
 
 def build_patterns(config: Config) -> CompiledPatterns:
@@ -689,7 +713,8 @@ def build_patterns(config: Config) -> CompiledPatterns:
 # Pre-compiled constant patterns used in scan_file / extract_prose_sentences
 _ADJ_ESCAPED = "|".join(re.escape(a) for a in MARKETING_ADJECTIVES)
 ADJ_PAIR_PATTERN = re.compile(
-    rf"\b({_ADJ_ESCAPED})\b and \b({_ADJ_ESCAPED})\b", re.IGNORECASE,
+    rf"\b({_ADJ_ESCAPED})\b and \b({_ADJ_ESCAPED})\b",
+    re.IGNORECASE,
 )
 TRICOLON_PATTERN = re.compile(r"\b\w+,\s+\w+,?\s+and\s+\w+\b", re.IGNORECASE)
 _LIST_ITEM_RE = re.compile(r"^\s*[-*]\s")
@@ -718,6 +743,7 @@ def strip_non_prose(text: str) -> str:
 # ============================================================================
 # Data types
 # ============================================================================
+
 
 @dataclass
 class Match:
@@ -823,6 +849,7 @@ def extract_prose_sentences(clean_lines: list[str]) -> list[str]:
 # Scanner
 # ============================================================================
 
+
 def scan_file(
     path: Path,
     config: Config | None = None,
@@ -858,9 +885,7 @@ def scan_file(
     for word, pattern in vocab_patterns:
         for i, line in enumerate(clean_lines):
             for _ in pattern.finditer(line):
-                line_num = line_index.find_line(
-                    word, i, case_sensitive=False
-                )
+                line_num = line_index.find_line(word, i, case_sensitive=False)
                 matches.append(
                     Match(
                         line_num=line_num,
@@ -876,9 +901,7 @@ def scan_file(
         for i, line in enumerate(clean_lines):
             m = pattern.search(line)
             if m:
-                line_num = line_index.find_line(
-                    m.group(0), i, case_sensitive=False
-                )
+                line_num = line_index.find_line(m.group(0), i, case_sensitive=False)
                 matches.append(
                     Match(
                         line_num=line_num,
@@ -904,9 +927,7 @@ def scan_file(
                     found.append((fm.group(0).strip(), line_start))
             if len(found) >= meta["min_count"]:
                 for text, idx in found:
-                    line_num = line_index.find_line(
-                        text[:40] if text else "", idx
-                    )
+                    line_num = line_index.find_line(text[:40] if text else "", idx)
                     matches.append(
                         Match(
                             line_num=line_num,
@@ -925,9 +946,7 @@ def scan_file(
                 for fm in compiled.finditer(clean_text):
                     matched_text = fm.group(0).strip()
                     line_start = clean_text.count("\n", 0, fm.start())
-                    line_num = line_index.find_line(
-                        matched_text, line_start
-                    )
+                    line_num = line_index.find_line(matched_text, line_start)
                     matches.append(
                         Match(
                             line_num=line_num,
@@ -941,10 +960,10 @@ def scan_file(
             else:
                 for i, line in enumerate(clean_lines):
                     for _ in compiled.finditer(line):
-                        search_text = " \u2014 " if "em_dash" in name else line.strip()[:40]
-                        line_num = line_index.find_line(
-                            search_text, i
+                        search_text = (
+                            " \u2014 " if "em_dash" in name else line.strip()[:40]
                         )
+                        line_num = line_index.find_line(search_text, i)
                         matches.append(
                             Match(
                                 line_num=line_num,
@@ -1041,8 +1060,15 @@ def scan_file(
                         last_heading_idx = i
                 if last_heading_idx is not None:
                     last_heading = clean_lines[last_heading_idx].strip().lower()
-                    conclusion_words = {"conclusion", "summary", "recap", "takeaway",
-                                        "wrapping", "final thoughts", "putting it all together"}
+                    conclusion_words = {
+                        "conclusion",
+                        "summary",
+                        "recap",
+                        "takeaway",
+                        "wrapping",
+                        "final thoughts",
+                        "putting it all together",
+                    }
                     if any(w in last_heading for w in conclusion_words):
                         matches.append(
                             Match(
@@ -1078,14 +1104,12 @@ def scan_file(
 
         if len(vague_matches) >= MIN_VAGUE_FOR_FLAG:
             for text, idx in vague_matches:
-                line_num = line_index.find_line(
-                    text, idx, case_sensitive=False
-                )
+                line_num = line_index.find_line(text, idx, case_sensitive=False)
                 matches.append(
                     Match(
                         line_num=line_num,
                         category="density",
-                        pattern=f"vague quantifier: \"{text}\"",
+                        pattern=f'vague quantifier: "{text}"',
                         text=clean_lines[idx].strip() if idx < len(clean_lines) else "",
                         weight=config.vague_weight,
                     )
@@ -1120,9 +1144,7 @@ def scan_file(
                             if first_line[:40] in line:
                                 idx = j
                                 break
-                        line_num = line_index.find_line(
-                            first_line[:40], idx
-                        )
+                        line_num = line_index.find_line(first_line[:40], idx)
                         matches.append(
                             Match(
                                 line_num=line_num,
@@ -1152,8 +1174,16 @@ def scan_file(
 # ============================================================================
 
 WRITING_GUIDE = """\
-Fix the flagged markdown file. The goal is text that reads like a human wrote it
-for other humans, not like an LLM generated a first draft that nobody reviewed.
+slop-md-lint failed. Fix every flagged file using the rules below, then re-run
+the same command to verify the score drops below threshold and no hard fails
+remain.
+
+Each match shows: L{line number}  (+{score weight})  {pattern}
+"[hard fail]" matches cause immediate failure regardless of score and must be
+eliminated.
+
+The goal is text that reads like a human wrote it for other humans, not like an
+LLM generated a first draft that nobody reviewed.
 
 Rules:
 
@@ -1202,10 +1232,12 @@ SENTENCES
   word, rewrite at least one.
 
 STRUCTURE
-- Don't use bold-colon lists (- **Foo:** bar) or (- **Foo**: bar). Write plain
-  lists or sentences.
-- Don't use em dashes (the long dash, or spaced double hyphens). Use commas,
-  periods, or parentheses instead.
+- [HARD FAIL] Don't use bold-colon lists (- **Foo:** bar) or (- **Foo**: bar).
+  Write plain lists or sentences. This pattern always fails the check regardless
+  of score.
+- [HARD FAIL] Don't use em dashes (the long dash \u2014 or spaced double hyphens).
+  Use commas, periods, or parentheses instead. This pattern always fails the
+  check regardless of score.
 - Don't number sub-headings (#### 1. Foo, #### 2. Bar). Just use headings.
 - Don't write filler intros ("This guide explains...", "Everything you need to
   know...", "In this document, we will..."). Start with the content.
@@ -1240,6 +1272,7 @@ KEEP
 # ============================================================================
 # CLI
 # ============================================================================
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -1350,11 +1383,13 @@ def main() -> None:
 
     # Apply excludes
     if args.exclude:
+
         def is_excluded(f: Path) -> bool:
             return any(
                 fnmatch.fnmatch(str(f), pat) or fnmatch.fnmatch(f.name, pat)
                 for pat in args.exclude
             )
+
         md_files = [f for f in md_files if not is_excluded(f)]
 
     if not md_files:
@@ -1363,9 +1398,7 @@ def main() -> None:
 
     compiled = build_patterns(config)
     results = [scan_file(f, config, compiled) for f in md_files]
-    flagged = [
-        r for r in results if r.normalized_score > threshold or r.has_hard_fail
-    ]
+    flagged = [r for r in results if r.normalized_score > threshold or r.has_hard_fail]
 
     if args.json:
         output = [
@@ -1391,6 +1424,8 @@ def main() -> None:
             if r.normalized_score > threshold or r.has_hard_fail or args.verbose
         ]
         print(json.dumps(output, indent=2))
+        if flagged:
+            print("\n" + WRITING_GUIDE, file=sys.stderr)
     else:
         for r in sorted(results, key=lambda r: r.normalized_score, reverse=True):
             is_flagged = r.normalized_score > threshold or r.has_hard_fail
@@ -1417,7 +1452,13 @@ def main() -> None:
                 for m in r.matches:
                     by_cat.setdefault(m.category, []).append(m)
 
-                for cat in ["vocabulary", "phrase", "formatting", "structural", "density"]:
+                for cat in [
+                    "vocabulary",
+                    "phrase",
+                    "formatting",
+                    "structural",
+                    "density",
+                ]:
                     cat_matches = by_cat.get(cat, [])
                     if not cat_matches:
                         continue
@@ -1455,7 +1496,6 @@ def main() -> None:
 
         if flagged:
             print()
-            print("Rewrite rules (also usable as LLM fixup prompt):")
             print("=" * 60)
             print(WRITING_GUIDE)
             print("=" * 60)
@@ -1502,7 +1542,9 @@ def _print_rules() -> None:
 
     print("\n\nINFORMATION DENSITY RULES")
     print("=" * 40)
-    print(f"  Vague quantifiers ({len(VAGUE_PHRASES)} patterns, min {MIN_VAGUE_FOR_FLAG} to flag):")
+    print(
+        f"  Vague quantifiers ({len(VAGUE_PHRASES)} patterns, min {MIN_VAGUE_FOR_FLAG} to flag):"
+    )
     for p in VAGUE_PHRASES:
         print(f"    - {p}")
     print("  - Low-information paragraph detection")
