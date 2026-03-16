@@ -117,38 +117,6 @@ Catches documents that use many words to say nothing specific.
 | Vague quantifiers | 3+ of: "various types", "multiple options", "and more", "etc.", "and so on", "among others" |
 | Low-information paragraphs | >15% filler vocabulary and no concrete specifics (no numbers, code refs, paths, or proper nouns) |
 
-## Example
-
-The same topic, before and after editing:
-
-Flagged (score 19.96):
-```markdown
-## Understanding the Network Architecture
-
-This guide explains the architecture and design principles behind the networking
-capabilities, empowering you to build robust and scalable infrastructure.
-
-The system provides a comprehensive networking solution designed for secure and
-efficient communication between machines. It offers features such as:
-
-- **Overlay Networks**: Seamlessly connect machines across different locations,
-  ensuring privacy and reliability.
-- **Zero Configuration**: Intuitive setup that leverages the declarative approach.
-```
-
-Clean (score 0.00):
-```markdown
-# Networking
-
-Clan machines can form overlay networks for private communication. Traffic
-between machines is encrypted end-to-end using WireGuard tunnels.
-
-## How it works
-
-Each machine gets a WireGuard keypair generated via `clan vars`. When you
-deploy, the public keys are exchanged automatically and tunnels are configured.
-```
-
 ## Configuration
 
 All defaults are baked into the tool. No config file needed. If you need to
