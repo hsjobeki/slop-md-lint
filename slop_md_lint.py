@@ -1323,6 +1323,11 @@ def main() -> None:
         action="store_true",
         help="List all rule groups and their patterns, then exit",
     )
+    parser.add_argument(
+        "--writing-guide",
+        action="store_true",
+        help="Print the writing guide after flagged output (for LLM fix-up prompts)",
+    )
 
     args = parser.parse_args()
 
@@ -1424,7 +1429,7 @@ def main() -> None:
             if r.normalized_score > threshold or r.has_hard_fail or args.verbose
         ]
         print(json.dumps(output, indent=2))
-        if flagged:
+        if flagged and args.writing_guide:
             print("\n" + WRITING_GUIDE, file=sys.stderr)
     else:
         for r in sorted(results, key=lambda r: r.normalized_score, reverse=True):
@@ -1494,7 +1499,7 @@ def main() -> None:
             f"Scanned {len(results)} files. {len(flagged)} flagged (threshold: {threshold})."
         )
 
-        if flagged:
+        if flagged and args.writing_guide:
             print()
             print("=" * 60)
             print(WRITING_GUIDE)

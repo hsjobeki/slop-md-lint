@@ -36,6 +36,7 @@ python3 slop_md_lint.py docs/ -v                       # show passing files too
 python3 slop_md_lint.py docs/ --exclude 'reference/**' # skip paths
 python3 slop_md_lint.py --list-rules                   # print all rules
 python3 slop_md_lint.py --dump-config                  # print built-in defaults
+python3 slop_md_lint.py docs/ --writing-guide          # append writing guide to output
 ```
 
 Exit 0 means clean. Exit 1 means flagged files.
@@ -224,6 +225,16 @@ python3 tests/test_slop_md_lint.py
 
 28 tests across 6 fixture files covering all five detection levels plus
 configuration overrides.
+
+## Writing guide (🚧 under construction)
+
+The `--writing-guide` flag appends a fix-up prompt to the linter output.
+Pipe it back into an LLM to get it to rewrite flagged files. The guide
+is not well-tuned yet.
+
+```bash
+python3 slop_md_lint.py docs/ --writing-guide 2>&1 | your-llm-tool
+```
 
 ## Design
 
