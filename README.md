@@ -21,8 +21,11 @@ normalized_score = raw_score / (word_count / 100)
 
 Every match adds weighted points. The total is normalized by document length.
 A 500-word doc with 15 raw points scores 3.0. Default threshold is 3.0.
-Two patterns (em dashes, bold-colon lists) hard-fail regardless of score
-because humans almost never write them in technical docs.
+Em dashes hard-fail regardless of score because humans almost never write
+them in technical docs.
+
+Scores are hidden from default output to avoid optimization pressure when
+feeding results to an LLM. Use `--score` to show them.
 
 Code blocks and frontmatter are stripped before scanning. Only prose is scored.
 
@@ -37,6 +40,7 @@ python3 slop_md_lint.py docs/ --exclude 'reference/**' # skip paths
 python3 slop_md_lint.py --list-rules                   # print all rules
 python3 slop_md_lint.py --dump-config                  # print built-in defaults
 python3 slop_md_lint.py docs/ --writing-guide          # append writing guide to output
+python3 slop_md_lint.py docs/ --score                  # show numeric scores
 ```
 
 Exit 0 means clean. Exit 1 means flagged files.
@@ -45,16 +49,17 @@ Exit 0 means clean. Exit 1 means flagged files.
 
 Five detection levels, each targeting a different axis of LLM writing habits.
 
-### Level 1: Vocabulary (64 stems, weight 1.0 each)
+### Level 1: Vocabulary (65 stems, weight 1.0 each)
 
 Word stems that are fine on their own but accumulate in LLM output. Each stem
 matches all inflected forms (e.g. "leverag" catches leverage, leverages,
-leveraged, leveraging). Five groups:
+leveraged, leveraging). Six groups:
 
 | Group | Count | Examples |
 |---|---|---|
-| `ai_classics` | 23 | delve, elevat\*, empower, harness, navigat\*, realm, landscape, tapestry, myriad, paramount, cornerstone |
-| `corporate_marketing` | 18 | streamlin\*, leverag\*, utiliz\*, facilitat\*, comprehensive, robust, seamless, intuitiv\*, optimal, ecosystem |
+| `ai_classics` | 22 | delve, elevat\*, empower, harness, navigat\*, realm, landscape, tapestry, myriad, paramount, cornerstone |
+| `corporate_marketing` | 16 | streamlin\*, leverag\*, utiliz\*, facilitat\*, seamless, intuitiv\*, performant |
+| `overuse` | 4 | ecosystem, robust, optimal, comprehensive |
 | `filler_transitions` | 13 | furthermore, moreover, notably, crucially, essentially, additionally, ultimately, fundamentally |
 | `self_congratulatory` | 6 | meticulou\*, thoughtful, elegantly, graceful, beautiful, intelligent |
 | `overqualifiers` | 4 | overarching, aforementioned, above-mentioned, underscore |
@@ -86,13 +91,13 @@ Punctuation and markdown patterns that betray LLM authorship.
 | Rule | Weight | Trigger | Hard fail |
 |---|---|---|---|
 | `em_dash` | 1.5 | ` — ` in prose | yes |
-| `bold_colon_list` | 1.5 | `- **Word:** rest` | yes |
+| `bold_colon_list` | 1.5 | `- **Word:** rest` | no (2+ to trigger) |
 | `numbered_subheading` | 1.5 | `#### 1. Foo` | no |
 | `exclamation_in_prose` | 1.0 | `!` in non-heading text | no (3+ to trigger) |
 | `emoji_in_docs` | 1.0 | emoji characters | no (3+ to trigger) |
 
-Em dashes and bold-colon lists are hard fails. Humans writing technical
-docs do not produce these patterns. LLMs do, consistently.
+Em dashes are hard fails. Humans writing technical docs do not produce
+this pattern. LLMs do, consistently.
 
 ### Level 4: Structural (6 checks, weight 2.0-3.0)
 
@@ -159,6 +164,14 @@ tricolon_min_count = 5
 [hard_fail]
 remove = ["em_dash"]
 add = ["numbered_subheading"]
+
+# Writing guide: minimum category score to show fix advice
+[guide]
+vocabulary = 3.0
+phrase = 2.0
+formatting = 0.0
+structural = 2.0
+density = 2.0
 ```
 
 Requires Python 3.11+ for TOML parsing (uses `tomllib`). On older Python,
@@ -228,13 +241,88 @@ configuration overrides.
 
 ## Writing guide (🚧 under construction)
 
-The `--writing-guide` flag appends a fix-up prompt to the linter output.
-Pipe it back into an LLM to get it to rewrite flagged files. The guide
-is not well-tuned yet.
+The `--writing-guide` flag appends a targeted fix-up prompt to the linter
+output. The guide is generated from the actual matches, not a static
+template. Each flagged file gets its own guide with only the relevant
+categories and specific line references.
+
+Categories only appear in the guide when their score meets a configurable
+threshold. Hard fails (em dashes, bold-colon lists) always appear. This
+means a file that only has em dashes gets a two-line guide, not a wall of
+text about vocabulary.
 
 ```bash
 python3 slop_md_lint.py docs/ --writing-guide 2>&1 | your-llm-tool
 ```
+
+Configure the per-category thresholds in `.sloplint.toml`:
+
+```toml
+[guide]
+vocabulary = 3.0   # only show vocab advice if 3+ points from vocabulary
+phrase = 2.0
+formatting = 0.0   # always show (hard fails bypass this anyway)
+structural = 2.0
+density = 2.0
+```
+
+The guide itself is not well-tuned yet. The hints per rule will improve
+as the tool gets used on real projects.
+
+## Things LLMs do (written by an LLM)
+
+Things learned while building and testing this tool:
+
+- **Scores create bad incentives.** Showing a numeric score to an LLM turns
+  editing into an optimization problem. The LLM will drop conjunctions, delete
+  content, and break grammar just to push the number down. Scores are hidden
+  from default output for this reason (`--score` shows them for humans).
+
+- **Line numbers invite context-free edits.** An LLM shown `L42 (+1.5)` will
+  jump to line 42 and mechanically change it without reading the surrounding
+  paragraph. The tool still shows line numbers (humans need them), but the
+  hints and guardrails try to force the LLM to consider context.
+
+- **"Do not break grammar" must be said explicitly.** LLMs do not assume you
+  want grammatically correct output. If the tool says "fix tricolon patterns"
+  without saying "do not drop conjunctions," the LLM will remove "and" from
+  lists and call it done. Every guardrail against a bad fix must be stated
+  as an explicit "do not."
+
+- **LLMs cause collateral damage.** When fixing a flagged pattern on a line,
+  an LLM will casually edit nearby unflagged content too — dropping words,
+  rewriting phrases, deleting information that wasn't a problem. The default
+  output now says "do not modify content the linter didn't flag."
+
+- **LLMs take the shortest path to silence a warning.** The fix that removes
+  the most points with the least effort wins, even if it damages the text.
+  Dropping "and" from a list is easier than restructuring a sentence, so
+  that's what happens.
+
+- **"Not every instance needs fixing" gets ignored under score pressure.**
+  You can tell an LLM that soft items are optional, but if it sees a number
+  to optimize, it will fix everything anyway. The instruction only works
+  when the score is hidden.
+
+- **LLMs don't push back on the tool.** A human editor would read eight
+  tricolon patterns and say "these are normal English, the tool is wrong
+  here." An LLM treats every flagged item as something to fix, even when
+  the correct action is to leave it alone.
+
+- **Hiding scores helps.** After removing scores from default output, Claude
+  correctly ignored two flagged files that had emojis in natural context. It
+  left the emojis and accepted the tool failure. Removing the optimization
+  pressure lets the LLM use judgment instead of chasing a number.
+
+- **This tool was written by an LLM.** It flags patterns that LLMs produce.
+  LLMs can detect slop in others' output but can't stop producing it
+  themselves.
+
+- **LLMs fix one flagged word by introducing another.** Replacing "leverage"
+  with "utilize" because it sounds different. Both are flagged.
+
+- **Like a cat bringing you a dead bird,** an LLM will proudly present its
+  "improved" version with half the content missing.
 
 ## Design
 

@@ -77,8 +77,15 @@ VOCABULARY_RULES: dict[str, list[str]] = {
         "sophisticat",  # sophisticated, sophistication
         "versatil",  # versatile, versatility
         "performant",
-        "optimal",
+    ],
+    # Words that are legitimate in moderation but become an AI signal when
+    # repeated heavily.  Unlike the groups above, the fix is to *reduce*
+    # repetition rather than eliminate the word.
+    "overuse": [
         "ecosystem",
+        "robust",
+        "optimal",
+        "comprehensive",
     ],
     # Filler adverbs/transitions that pad without adding meaning
     "filler_transitions": [
@@ -112,6 +119,16 @@ VOCABULARY_RULES: dict[str, list[str]] = {
         "above-mentioned",
         "underscore",
     ],
+}
+
+# Per-vocabulary-group fix hints for the writing guide.
+VOCABULARY_HINTS: dict[str, str] = {
+    "ai_classics": "drop entirely or say what actually happens",
+    "corporate_marketing": "use plain English: 'use', 'help', 'simplify'; or be specific about what",
+    "filler_transitions": "remove — restructure if the sentence needs a transition",
+    "self_congratulatory": "drop the adjective; if the sentence works without it, it wasn't needed",
+    "overqualifiers": "drop entirely",
+    "overuse": "legitimate word — reduce repetition, keep where most precise, replace or drop the rest",
 }
 
 # Default weight for vocabulary matches
@@ -274,6 +291,23 @@ PHRASE_RULES: dict[str, list[str]] = {
     ],
 }
 
+# Per-phrase-group fix hints for the writing guide.
+PHRASE_HINTS: dict[str, str] = {
+    "filler_phrases": "delete the phrase; say the thing directly",
+    "this_verb_openers": "rewrite to say what actually happens, e.g. 'Deploys finish in 30s' instead of 'This enables faster deploys'",
+    "meta_intros": "delete — start with the content",
+    "hedging": "be specific or drop the hedge",
+    "marketing_tone": "state the fact without selling it",
+    "filler_gerunds": "state the result directly",
+    "slop_headings": "use a heading that says what the section contains",
+    "filler_transitions": "remove the transition; the next sentence should stand on its own",
+    "conclusion_filler": "delete the section or replace with content that adds new information",
+    "todays_world": "delete — start with the actual content",
+    "role_language": "say what the thing does, not that it's important",
+    "rhetorical_questions": "make a statement instead",
+    "tautologies": "drop the redundant word",
+}
+
 # Default weight for phrase matches
 PHRASE_WEIGHT = 2.0
 
@@ -287,6 +321,7 @@ FORMATTING_RULES: dict[str, dict] = {
         "hard_fail": True,
         "description": "em dash ( \u2014 )",
         "multiline": False,
+        "hint": "replace with comma, period, or parentheses",
     },
     "bold_colon_list": {
         # "- **Word:** rest" or "- **Word**: rest" -- colon inside or outside bold
@@ -298,6 +333,7 @@ FORMATTING_RULES: dict[str, dict] = {
         "description": "**Bold:** list pattern",
         "multiline": True,
         "min_count": 2,
+        "hint": "Do not remove bold from terms that serve as definitions or labels.",
     },
     "numbered_subheading": {
         # #### 1. Foo -- AI loves this textbook structure
@@ -307,6 +343,7 @@ FORMATTING_RULES: dict[str, dict] = {
         "hard_fail": False,
         "description": "numbered sub-heading",
         "multiline": True,
+        "hint": "drop the number, just use the heading text",
     },
     "exclamation_in_prose": {
         # Exclamation marks in prose (not in code, not in URLs, not in headings)
@@ -317,6 +354,7 @@ FORMATTING_RULES: dict[str, dict] = {
         "description": "exclamation mark in prose",
         "multiline": False,
         "min_count": 3,  # One or two are fine; many signal AI cheerfulness
+        "hint": "state facts; drop the exclamation mark",
     },
     "emoji_in_docs": {
         # Emoji in documentation -- often AI-added decoration
@@ -326,6 +364,7 @@ FORMATTING_RULES: dict[str, dict] = {
         "description": "emoji in documentation",
         "multiline": False,
         "min_count": 3,
+        "hint": "remove emoji unless it's a UI element reference",
     },
 }
 
@@ -381,6 +420,31 @@ VAGUE_PHRASES = [
 
 VAGUE_WEIGHT = 1.0
 MIN_VAGUE_FOR_FLAG = 3  # A few are fine; many means the doc avoids specifics
+
+# Per-category fix hints for structural and density matches.
+STRUCTURAL_HINTS: dict[str, str] = {
+    "excessive bold": "reduce bold usage; only bold terms that need visual emphasis",
+    "monotonous sentence starts": "vary sentence openings; rewrite at least one",
+    "too many headings": "merge sections; prefer fewer headings with more content each",
+    "tricolon repetition": "Do not drop conjunctions or delete list items.",
+    "summary/conclusion section": "delete the section or replace with content that adds new information",
+    "marketing adjective pairs": "drop the adjective pair; be specific about what the thing does",
+}
+
+DENSITY_HINTS: dict[str, str] = {
+    "vague quantifier": "name the things instead of saying 'various', 'multiple', 'and more'",
+    "low-information paragraph": "add specifics (numbers, code refs, paths, names) or delete the paragraph",
+}
+
+# Default guide thresholds: minimum category score to include fix advice.
+# Hard fails always show regardless of threshold.
+DEFAULT_GUIDE_THRESHOLDS: dict[str, float] = {
+    "vocabulary": 3.0,
+    "phrase": 2.0,
+    "formatting": 0.0,
+    "structural": 2.0,
+    "density": 2.0,
+}
 
 DEFAULT_THRESHOLD = 3.0
 MIN_WORDS_TO_SCORE = 50
@@ -463,6 +527,14 @@ def _generate_default_toml() -> str:
         "# [hard_fail]",
         '# add = ["numbered_subheading"]    # make these hard-fail too',
         '# remove = ["em_dash"]             # don\'t hard-fail on these',
+        "",
+        "# Writing guide thresholds: minimum category score to include",
+        "# fix advice in --writing-guide output. Hard fails always show.",
+        "[guide]",
+    ]
+    for cat, val in DEFAULT_GUIDE_THRESHOLDS.items():
+        lines.append(f"{cat} = {val}")
+    lines += [
     ]
     return "\n".join(lines) + "\n"
 
@@ -483,6 +555,7 @@ _KNOWN_KEYS = {
     "structural",
     "density",
     "hard_fail",
+    "guide",
 }
 
 
@@ -536,6 +609,9 @@ class Config:
 
     # Structural thresholds
     structural: dict[str, float] = field(default_factory=dict)
+
+    # Guide thresholds: minimum category score to include fix advice
+    guide_thresholds: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Apply parsed DEFAULT_TOML so every field gets the right value.
@@ -605,6 +681,10 @@ class Config:
                 data["hard_fail"].get("remove", self.no_hard_fail_rules)
             )
 
+        if "guide" in data:
+            for cat, val in data["guide"].items():
+                self.guide_thresholds[cat] = float(val)
+
     @classmethod
     def from_toml_string(cls, text: str) -> "Config":
         """Parse a TOML string into a Config (defaults + overrides)."""
@@ -631,41 +711,51 @@ class Config:
 class CompiledPatterns:
     """Pre-compiled regex patterns for a given Config. Built once, reused across files."""
 
-    vocabulary: list[tuple[str, re.Pattern]]
-    phrases: list[tuple[str, re.Pattern]]
+    vocabulary: list[tuple[str, str, re.Pattern]]
+    phrases: list[tuple[str, str, re.Pattern]]
     formatting: list[tuple[str, re.Pattern, dict]]
     vague: list[tuple[str, re.Pattern]]
 
 
 def _build_vocabulary_patterns(
     config: Config,
-) -> list[tuple[str, re.Pattern]]:
-    """Build compiled word patterns from enabled groups + extras - ignores."""
+) -> list[tuple[str, str, re.Pattern]]:
+    """Build compiled word patterns from enabled groups + extras - ignores.
+
+    Returns list of (stem, group_name, compiled_pattern).
+    """
     ignored = set(w.lower() for w in config.ignore_vocabulary)
-    words: list[str] = []
+    words: list[tuple[str, str]] = []  # (stem, group)
     for group, word_list in VOCABULARY_RULES.items():
         if config.vocabulary_enabled.get(group, True):
-            words.extend(word_list)
-    words.extend(config.extra_vocabulary)
-    words = [w for w in words if w.lower() not in ignored]
+            for w in word_list:
+                words.append((w, group))
+    for w in config.extra_vocabulary:
+        words.append((w, "extra"))
+    words = [(w, g) for w, g in words if w.lower() not in ignored]
     return [
-        (word, re.compile(rf"\b{re.escape(word)}\w*\b", re.IGNORECASE))
-        for word in words
+        (word, group, re.compile(rf"\b{re.escape(word)}\w*\b", re.IGNORECASE))
+        for word, group in words
     ]
 
 
 def _build_phrase_patterns(
     config: Config,
-) -> list[tuple[str, re.Pattern]]:
-    """Build compiled phrase patterns from enabled groups + extras - ignores."""
+) -> list[tuple[str, str, re.Pattern]]:
+    """Build compiled phrase patterns from enabled groups + extras - ignores.
+
+    Returns list of (regex_string, group_name, compiled_pattern).
+    """
     ignored = set(config.ignore_phrases)
-    phrases: list[str] = []
+    phrases: list[tuple[str, str]] = []  # (pattern, group)
     for group, phrase_list in PHRASE_RULES.items():
         if config.phrase_enabled.get(group, True):
-            phrases.extend(phrase_list)
-    phrases.extend(config.extra_phrases)
-    phrases = [p for p in phrases if p not in ignored]
-    return [(phrase, re.compile(phrase, re.IGNORECASE)) for phrase in phrases]
+            for p in phrase_list:
+                phrases.append((p, group))
+    for p in config.extra_phrases:
+        phrases.append((p, "extra"))
+    phrases = [(p, g) for p, g in phrases if p not in ignored]
+    return [(phrase, group, re.compile(phrase, re.IGNORECASE)) for phrase, group in phrases]
 
 
 def _build_formatting_patterns(
@@ -753,6 +843,8 @@ class Match:
     text: str
     weight: float
     hard_fail: bool = False
+    matched_word: str = ""
+    group: str = ""
 
 
 @dataclass
@@ -882,9 +974,9 @@ def scan_file(
     matches: list[Match] = []
 
     # --- Level 1: Vocabulary ---
-    for word, pattern in vocab_patterns:
+    for word, group, pattern in vocab_patterns:
         for i, line in enumerate(clean_lines):
-            for _ in pattern.finditer(line):
+            for m in pattern.finditer(line):
                 line_num = line_index.find_line(word, i, case_sensitive=False)
                 matches.append(
                     Match(
@@ -893,11 +985,13 @@ def scan_file(
                         pattern=word,
                         text=line.strip(),
                         weight=config.vocabulary_weight,
+                        matched_word=m.group(0),
+                        group=group,
                     )
                 )
 
     # --- Level 2: Phrases ---
-    for phrase_pat, pattern in phrase_patterns:
+    for phrase_pat, group, pattern in phrase_patterns:
         for i, line in enumerate(clean_lines):
             m = pattern.search(line)
             if m:
@@ -909,6 +1003,8 @@ def scan_file(
                         pattern=phrase_pat,
                         text=line.strip(),
                         weight=config.phrase_weight,
+                        matched_word=m.group(0),
+                        group=group,
                     )
                 )
 
@@ -936,6 +1032,7 @@ def scan_file(
                             text=text,
                             weight=meta["weight"],
                             hard_fail=meta["hard_fail"],
+                            group=name,
                         )
                     )
         else:
@@ -955,6 +1052,7 @@ def scan_file(
                             text=matched_text,
                             weight=meta["weight"],
                             hard_fail=meta["hard_fail"],
+                            group=name,
                         )
                     )
             else:
@@ -972,6 +1070,7 @@ def scan_file(
                                 text=line.strip(),
                                 weight=meta["weight"],
                                 hard_fail=meta["hard_fail"],
+                                group=name,
                             )
                         )
 
@@ -998,6 +1097,7 @@ def scan_file(
                         pattern=f"excessive bold ({bold_count} bold phrases in {word_count} words)",
                         text="",
                         weight=config.structural_weight,
+                        group="excessive_bold",
                     )
                 )
 
@@ -1020,6 +1120,7 @@ def scan_file(
                                 pattern=f'monotonous sentence starts: "{most_common}" ({count}/{len(sentences)} = {ratio:.0%})',
                                 text="",
                                 weight=config.structural_weight,
+                                group="monotonous_starts",
                             )
                         )
 
@@ -1035,6 +1136,7 @@ def scan_file(
                             pattern=f"too many headings ({len(headings)} headings for {word_count} words = {words_per_heading:.0f} words/heading)",
                             text="",
                             weight=config.structural_weight,
+                            group="too_many_headings",
                         )
                     )
 
@@ -1049,6 +1151,7 @@ def scan_file(
                         pattern=f"tricolon repetition ({len(tricolons)}x 'X, Y, and Z' pattern)",
                         text="",
                         weight=config.tricolon_weight,
+                        group="tricolon",
                     )
                 )
 
@@ -1077,6 +1180,7 @@ def scan_file(
                                 pattern=f'summary/conclusion section: "{clean_lines[last_heading_idx].strip()}"',
                                 text="",
                                 weight=config.structural_weight,
+                                group="conclusion_section",
                             )
                         )
 
@@ -1090,6 +1194,7 @@ def scan_file(
                     pattern=f"marketing adjective pairs ({len(adj_pairs)}x)",
                     text="",
                     weight=config.adj_pair_weight * len(adj_pairs),
+                    group="marketing_adj_pairs",
                 )
             )
 
@@ -1112,6 +1217,8 @@ def scan_file(
                         pattern=f'vague quantifier: "{text}"',
                         text=clean_lines[idx].strip() if idx < len(clean_lines) else "",
                         weight=config.vague_weight,
+                        matched_word=text,
+                        group="vague_quantifier",
                     )
                 )
 
@@ -1152,6 +1259,7 @@ def scan_file(
                                 pattern=f"low-information paragraph ({filler_ratio:.0%} filler words, no specifics)",
                                 text=first_line[:PREVIEW_LENGTH],
                                 weight=config.density_paragraph_weight,
+                                group="low_info_paragraph",
                             )
                         )
 
@@ -1170,103 +1278,175 @@ def scan_file(
 
 
 # ============================================================================
-# Writing guide (also usable as LLM fix-up prompt)
+# Writing guide (dynamically generated from actual matches)
 # ============================================================================
 
-WRITING_GUIDE = """\
-slop-md-lint failed. Fix every flagged file using the rules below, then re-run
-the same command to verify the score drops below threshold and no hard fails
-remain.
+# Unified hint lookup by group name. Merges all hint dicts + formatting hints.
+_GROUP_HINTS: dict[str, str] = {}
+_GROUP_HINTS.update(VOCABULARY_HINTS)
+_GROUP_HINTS.update(PHRASE_HINTS)
+for _name, _rule in FORMATTING_RULES.items():
+    if _rule.get("hint"):
+        _GROUP_HINTS[_name] = _rule["hint"]
+_GROUP_HINTS.update({
+    "excessive_bold": STRUCTURAL_HINTS["excessive bold"],
+    "monotonous_starts": STRUCTURAL_HINTS["monotonous sentence starts"],
+    "too_many_headings": STRUCTURAL_HINTS["too many headings"],
+    "tricolon": STRUCTURAL_HINTS["tricolon repetition"],
+    "conclusion_section": STRUCTURAL_HINTS["summary/conclusion section"],
+    "marketing_adj_pairs": STRUCTURAL_HINTS["marketing adjective pairs"],
+    "vague_quantifier": DENSITY_HINTS["vague quantifier"],
+    "low_info_paragraph": DENSITY_HINTS["low-information paragraph"],
+})
 
-Each match shows: L{line number}  (+{score weight})  {pattern}
-"[hard fail]" matches cause immediate failure regardless of score and must be
-eliminated.
+_GUIDE_PREAMBLE = """\
+slop-md-lint detected patterns commonly left by LLMs.
 
-The goal is text that reads like a human wrote it for other humans, not like an
-LLM generated a first draft that nobody reviewed.
+BEFORE CHANGING ANYTHING:
+1. Read the full document.
+2. For each flagged word/phrase, read the surrounding context.
+   Ask: is this word doing real work here, or is it filler?
+   A word that's precise and meaningful in its context stays,
+   even if the linter flagged it.
 
-Rules:
-
-TONE
-- Write like you're explaining something to a colleague. Short, direct, concrete.
-- No marketing voice. Don't sell the thing; explain what it does.
-- Cut every word that doesn't teach the reader something. If a sentence works
-  without an adjective, delete the adjective.
-
-VOCABULARY
-- These words and their inflections are banned. Replace with plain English:
-    leverage, utilize, streamline, facilitate -> "use", "help", "simplify"
-    comprehensive, robust, seamless, intuitive -> drop or be specific about what
-    empower, foster, harness, unlock, navigate -> say what actually happens
-    delve, elevate, realm, landscape, tapestry -> drop entirely
-    myriad, plethora, paramount, pivotal, holistic -> drop or pick a concrete word
-    cornerstone, beacon, game-changer, synergy -> drop (these are marketing)
-    cutting-edge, state-of-the-art, best-in-class, world-class -> drop or cite data
-    effortless, versatile, sophisticated, performant, optimal -> be specific instead
-    ecosystem -> "system", "toolchain", or name the actual parts
-    meticulous, thoughtful, elegant, graceful, beautiful, intelligent -> drop
-    overarching, aforementioned, above-mentioned, underscore -> drop
-- These filler transitions add nothing. Remove or restructure:
-    furthermore, moreover, additionally, notably, crucially, essentially,
-    importantly, interestingly, ultimately, fundamentally, inherently,
-    undeniably, arguably, first and foremost, with that in mind
-- When in doubt: if a simpler word exists, use it.
-
-SENTENCES
-- Don't start sentences with "This ensures", "This provides", "This enables",
-  "This allows". Rewrite to say what actually happens.
-    Bad:  "This enables you to deploy faster."
-    Good: "Deploys finish in under 30 seconds."
-- Don't pad with "ensuring X and Y", "enabling X and Y". State the fact directly.
-- Don't hedge with "depending on your requirements/needs/use case".
-- Don't write rhetorical questions as transitions ("But what about...?",
-  "So how do we...?", "You might be wondering..."). Make a statement instead.
-- Don't write "it's worth noting", "it's important to note", "needless to say".
-  If it's worth noting, just say it.
-- Don't write "not only X but also Y". Write "X. Also Y." or just "X and Y".
-- Don't write "plays a crucial role", "serves as a foundation", "paves the way".
-  Say what the thing does, not that it's important.
-- Don't write "in today's rapidly evolving..." or "in the modern...". Start
-  with the actual content.
-- Vary sentence openings. If three sentences in a row start with the same
-  word, rewrite at least one.
-
-STRUCTURE
-- [HARD FAIL] Don't use bold-colon lists (- **Foo:** bar) or (- **Foo**: bar).
-  Write plain lists or sentences. This pattern always fails the check regardless
-  of score.
-- [HARD FAIL] Don't use em dashes (the long dash \u2014 or spaced double hyphens).
-  Use commas, periods, or parentheses instead. This pattern always fails the
-  check regardless of score.
-- Don't number sub-headings (#### 1. Foo, #### 2. Bar). Just use headings.
-- Don't write filler intros ("This guide explains...", "Everything you need to
-  know...", "In this document, we will..."). Start with the content.
-- Don't write summary sections ("Key Advantages", "Conclusion", "Final Thoughts",
-  "Wrapping Up") that restate what was already said.
-- Don't write sign-off filler ("We hope this was helpful", "Happy deploying!",
-  "Don't hesitate to reach out", "on your journey").
-- Prefer fewer headings with more content under each over many headings
-  with a sentence each.
-- Three or more exclamation marks in prose is cheerleading, not documentation.
-  State facts.
-- Don't use emoji in documentation unless it's a UI element reference.
-
-INFORMATION DENSITY
-- Be specific. Don't write "various options"; name them. Don't write
-  "multiple features"; list the actual features.
-- Every paragraph should teach something concrete. If you can delete a
-  paragraph and the doc loses no information, delete it.
-- Don't write "and more", "etc.", "among others", "such as X, Y, and many
-  more". Either list the things or don't.
-- Don't write tautologies: "end result" (just "result"), "basic fundamentals"
-  (just "fundamentals"), "completely eliminate" (just "eliminate"),
-  "very unique" (just "unique").
-
-KEEP
+RULES:
+- Fix HARD items unconditionally.
+- For SOFT items: judge each match in context. The same word
+  can be the right choice in one paragraph and filler in another.
+- To reduce repetition, cut redundant sentences or use pronouns
+  ("them", "these", "it"). Don't swap precise terms for vaguer ones.
 - Keep all technical content, code blocks, links, and examples intact.
-- Keep the same heading hierarchy level (##, ###, etc.).
-- Don't invent new information. Only rephrase what's already there.
+- Do not change lines or sections not mentioned below.
+- Re-run the linter after changes to verify the score drops.\
 """
+
+
+def build_guide(result: FileResult, config: Config) -> str:
+    """Build a targeted writing guide from the actual matches in a FileResult.
+
+    Groups matches by rule group, deduplicates, separates hard vs soft.
+    """
+    thresholds = config.guide_thresholds
+
+    # Collect category-level scores to filter by threshold
+    cat_scores: dict[str, float] = {}
+    cat_has_hard_fail: dict[str, bool] = {}
+    for m in result.matches:
+        cat_scores[m.category] = cat_scores.get(m.category, 0.0) + m.weight
+        if m.hard_fail:
+            cat_has_hard_fail[m.category] = True
+
+    # Filter matches by category threshold (hard fails always pass)
+    eligible: list[Match] = []
+    for m in result.matches:
+        score = cat_scores.get(m.category, 0.0)
+        threshold = thresholds.get(m.category, 0.0)
+        if m.hard_fail or score >= threshold:
+            eligible.append(m)
+
+    if not eligible:
+        return ""
+
+    # Split into hard and soft
+    hard_matches = [m for m in eligible if m.hard_fail]
+    soft_matches = [m for m in eligible if not m.hard_fail]
+
+    lines: list[str] = [_GUIDE_PREAMBLE, ""]
+
+    if hard_matches:
+        lines.append("HARD (always fix):")
+        _emit_grouped_matches(hard_matches, lines)
+        lines.append("")
+
+    if soft_matches:
+        lines.append("SOFT (fix only if filler, not the document's actual subject):")
+        _emit_grouped_matches(soft_matches, lines)
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def _emit_grouped_matches(matches: list[Match], lines: list[str]) -> None:
+    """Group matches by rule group, deduplicate, and emit compact output."""
+    # Preserve order of first appearance
+    group_order: list[str] = []
+    by_group: dict[str, list[Match]] = {}
+    for m in matches:
+        key = m.group or m.pattern  # fallback for matches without group
+        if key not in by_group:
+            group_order.append(key)
+        by_group.setdefault(key, []).append(m)
+
+    for group_key in group_order:
+        group_matches = by_group[group_key]
+        hint = _GROUP_HINTS.get(group_key, "")
+
+        # Collect all matched words in this group
+        words = [m.matched_word for m in group_matches if m.matched_word]
+        unique_words = list(dict.fromkeys(words))  # dedupe, preserve order
+
+        # Build the header: [group] "word" if few unique words, else just [group]
+        if len(unique_words) == 0:
+            # structural/formatting matches with no matched_word
+            header = f"  [{group_key}] ({len(group_matches)}x)"
+        elif len(unique_words) <= 3:
+            word_list = ", ".join(f'"{w}"' for w in unique_words)
+            header = f"  [{group_key}] {word_list} ({len(group_matches)}x)"
+        else:
+            header = f"  [{group_key}] ({len(group_matches)}x)"
+
+        if hint:
+            header += f" \u2192 {hint}"
+        lines.append(header)
+
+        # Build compact line references
+        if len(unique_words) <= 3:
+            # Words already in header: just list line numbers compactly
+            line_refs = _compact_line_refs(group_matches)
+            lines.append(f"    {line_refs}")
+        else:
+            # Many distinct words: show word per line
+            line_refs = _compact_line_refs_with_words(group_matches)
+            lines.append(f"    {line_refs}")
+
+
+def _compact_line_refs(matches: list[Match]) -> str:
+    """Build compact line references like 'L3, L13 (2x), L19 (2x), L35 (3x)'."""
+    # Count occurrences per line
+    line_counts: dict[int, int] = {}
+    line_order: list[int] = []
+    for m in matches:
+        ln = m.line_num
+        if ln not in line_counts:
+            line_order.append(ln)
+        line_counts[ln] = line_counts.get(ln, 0) + 1
+
+    parts = []
+    for ln in line_order:
+        count = line_counts[ln]
+        ref = f"L{ln}" if ln else "file"
+        if count > 1:
+            ref += f" ({count}x)"
+        parts.append(ref)
+    return ", ".join(parts)
+
+
+def _compact_line_refs_with_words(matches: list[Match]) -> str:
+    """Build line refs with words like 'L11: "navigate", L35: "navigation"'."""
+    # Dedupe by (line_num, matched_word)
+    seen: set[tuple[int, str]] = set()
+    parts = []
+    for m in matches:
+        key = (m.line_num, m.matched_word)
+        if key in seen:
+            continue
+        seen.add(key)
+        ref = f"L{m.line_num}" if m.line_num else "file"
+        if m.matched_word:
+            parts.append(f'{ref}: "{m.matched_word}"')
+        else:
+            parts.append(ref)
+    return ", ".join(parts)
 
 
 # ============================================================================
@@ -1327,6 +1507,11 @@ def main() -> None:
         "--writing-guide",
         action="store_true",
         help="Print the writing guide after flagged output (for LLM fix-up prompts)",
+    )
+    parser.add_argument(
+        "--score",
+        action="store_true",
+        help="Show numeric scores in output (hidden by default to avoid optimization pressure)",
     )
 
     args = parser.parse_args()
@@ -1430,7 +1615,11 @@ def main() -> None:
         ]
         print(json.dumps(output, indent=2))
         if flagged and args.writing_guide:
-            print("\n" + WRITING_GUIDE, file=sys.stderr)
+            for r in flagged:
+                guide = build_guide(r, config)
+                if guide:
+                    print(f"\n--- {r.path} ---", file=sys.stderr)
+                    print(guide, file=sys.stderr)
     else:
         for r in sorted(results, key=lambda r: r.normalized_score, reverse=True):
             is_flagged = r.normalized_score > threshold or r.has_hard_fail
@@ -1447,9 +1636,10 @@ def main() -> None:
                 status = "ok"
             print(f"\n{'=' * 60}")
             print(f"[{status}] {r.path}")
-            print(
-                f"  words: {r.word_count}  raw: {r.raw_score:.1f}  normalized: {r.normalized_score:.2f}  (threshold: {threshold})"
-            )
+            if args.score:
+                print(
+                    f"  words: {r.word_count}  raw: {r.raw_score:.1f}  normalized: {r.normalized_score:.2f}  (threshold: {threshold})"
+                )
 
             if r.matches:
                 # Group by category for readability
@@ -1467,43 +1657,68 @@ def main() -> None:
                     cat_matches = by_cat.get(cat, [])
                     if not cat_matches:
                         continue
-                    print(f"\n  [{cat}]")
-                    for m in cat_matches:
-                        loc = f"L{m.line_num}" if m.line_num else "file"
-                        print(f"    {loc:>6}  ({m.weight:+.1f}) {m.pattern}")
-                        if m.text:
-                            preview = m.text[:PREVIEW_LENGTH] + (
-                                "..." if len(m.text) > PREVIEW_LENGTH else ""
-                            )
-                            print(f"           {preview}")
 
-        # Summary table
-        epsilon = 0.2
-        nearby = [
-            r
-            for r in results
-            if r.raw_score > 0 and r.normalized_score > threshold - epsilon
-        ]
-        if nearby:
-            print(f"\n{'=' * 60}")
-            print(f"  {'SCORE':>5}  {'RAW':>5}  {'WORDS':>5}  FILE")
-            print(f"  {'-----':>5}  {'---':>5}  {'-----':>5}  {'----'}")
-            for r in sorted(nearby, key=lambda r: r.normalized_score, reverse=True):
-                marker = " ! " if r.normalized_score > threshold else " ~ "
-                print(
-                    f"{marker}{r.normalized_score:5.2f}  {r.raw_score:5.1f}  {r.word_count:5d}  {r.path}"
-                )
+                    if cat == "vocabulary":
+                        # Show only unique stems and total score, no lines/counts/samples.
+                        # The LLM must read the document and judge which uses are
+                        # domain terms vs filler.
+                        cat_score = sum(m.weight for m in cat_matches)
+                        unique_stems = list(dict.fromkeys(
+                            m.pattern for m in cat_matches
+                        ))
+                        stems_str = ", ".join(unique_stems)
+                        print(f"\n  [{cat}] +{cat_score:.1f} — {stems_str}")
+                        print(f"    Vocabulary words are often domain terms. Don't replace")
+                        print(f"    a word that is the topic of the document. Fix phrase and")
+                        print(f"    formatting issues first. If the score still exceeds the")
+                        print(f"    threshold due to domain vocabulary, that's acceptable.")
+                    else:
+                        print(f"\n  [{cat}]")
+                        for m in cat_matches:
+                            loc = f"L{m.line_num}" if m.line_num else "file"
+                            print(f"    {loc:>6}  ({m.weight:+.1f}) {m.pattern}")
+                            if m.text:
+                                preview = m.text[:PREVIEW_LENGTH] + (
+                                    "..." if len(m.text) > PREVIEW_LENGTH else ""
+                                )
+                                print(f"           {preview}")
+
+        # Summary table (only with --score)
+        if args.score:
+            epsilon = 0.2
+            nearby = [
+                r
+                for r in results
+                if r.raw_score > 0 and r.normalized_score > threshold - epsilon
+            ]
+            if nearby:
+                print(f"\n{'=' * 60}")
+                print(f"  {'SCORE':>5}  {'RAW':>5}  {'WORDS':>5}  FILE")
+                print(f"  {'-----':>5}  {'---':>5}  {'-----':>5}  {'----'}")
+                for r in sorted(nearby, key=lambda r: r.normalized_score, reverse=True):
+                    marker = " ! " if r.normalized_score > threshold else " ~ "
+                    print(
+                        f"{marker}{r.normalized_score:5.2f}  {r.raw_score:5.1f}  {r.word_count:5d}  {r.path}"
+                    )
 
         print(f"\n{'=' * 60}")
         print(
             f"Scanned {len(results)} files. {len(flagged)} flagged (threshold: {threshold})."
         )
+        if flagged:
+            print()
+            print("Not every flagged instance needs fixing. Fix hard fails and")
+            print("clear filler. Do not modify content the linter didn't flag.")
 
         if flagged and args.writing_guide:
-            print()
-            print("=" * 60)
-            print(WRITING_GUIDE)
-            print("=" * 60)
+            for r in flagged:
+                guide = build_guide(r, config)
+                if guide:
+                    print()
+                    print("=" * 60)
+                    print(f"Writing guide for: {r.path}")
+                    print("=" * 60)
+                    print(guide)
 
     sys.exit(1 if flagged else 0)
 

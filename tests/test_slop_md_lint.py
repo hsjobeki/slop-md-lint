@@ -230,9 +230,9 @@ def test_config_disable_vocabulary_group() -> None:
     config.vocabulary_enabled["corporate_marketing"] = False
     result = scan_file(TESTS_DIR / "sloppy.md", config)
     vocab_words = {m.pattern for m in result.matches if m.category == "vocabulary"}
-    # "robust", "seamless", etc. are corporate_marketing -- should be gone
-    assert "robust" not in vocab_words, "robust should not be flagged when corporate_marketing is disabled"
+    # "seamless", "leverag", etc. are corporate_marketing -- should be gone
     assert "seamless" not in vocab_words, "seamless should not be flagged when corporate_marketing is disabled"
+    assert "leverag" not in vocab_words, "leverage should not be flagged when corporate_marketing is disabled"
 
 
 def test_config_ignore_vocabulary() -> None:
