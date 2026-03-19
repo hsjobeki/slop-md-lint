@@ -1,0 +1,6 @@
+# Example: use with `python3 slop_md_lint.py docs/ --fixup --config examples/fixup-sloplint.toml`
+# For the simpler workflow, use `--type technical` instead (no config needed).
+
+[[fixup]]
+label = "Technical writing rules"
+source = "prompts/technical-writing.md"
