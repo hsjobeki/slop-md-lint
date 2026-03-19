@@ -14,6 +14,7 @@ let
     root = ./.;
     fileset = fs.unions [
       ./slop_md_lint.py
+      ./prompts
       ./tests
     ];
   };
@@ -26,8 +27,19 @@ in
 
     inherit src;
 
-    installPhase = ''
-      install -Dm755 slop_md_lint.py $out/bin/slop-md-lint
+    installPhase = let
+      python = pkgs.python3;
+    in ''
+      mkdir -p $out/lib/slop-md-lint/prompts
+      cp slop_md_lint.py $out/lib/slop-md-lint/
+      cp prompts/*.md $out/lib/slop-md-lint/prompts/
+
+      mkdir -p $out/bin
+      echo '#!${python}/bin/python3' > $out/bin/slop-md-lint
+      echo 'import sys, runpy' >> $out/bin/slop-md-lint
+      echo 'sys.argv[0] = "'"$out"'/lib/slop-md-lint/slop_md_lint.py"' >> $out/bin/slop-md-lint
+      echo 'runpy.run_path(sys.argv[0], run_name="__main__")' >> $out/bin/slop-md-lint
+      chmod +x $out/bin/slop-md-lint
     '';
 
     meta = {
