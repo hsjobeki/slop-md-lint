@@ -13,6 +13,24 @@ essays, and chat messages are out of scope.
 > - Gates LLM-generated PRs by flagging obvious slop
 > - Feed the results back into your LLM, rebase, submit cleaner PRs
 
+## Why slop-md-lint
+
+| | slop-md-lint | [Vale](https://github.com/errata-ai/vale) | [VectorLint](https://github.com/TRocket-Labs/vectorlint) |
+|---|---|---|---|
+| **Approach** | Regex + accumulated scoring | Regex + per-match rules | LLM-as-judge |
+| **Scope** | LLM slop patterns | General prose style | Whatever the prompt asks |
+| **Offline/deterministic** | Yes | Yes | No (API calls, non-deterministic) |
+| **Fixup output** | Writing guide with line refs | No | No |
+
+Vale catches bad writing in general. slop-md-lint catches LLM-specific
+patterns (accumulation, cross-section analysis, formatting). They complement
+each other. VectorLint catches things no regex can but costs money and
+varies between runs.
+
+slop-md-lint closes the loop: `--type technical` produces a fixup guide
+the LLM can apply directly. LLM writes → tool flags → LLM rewrites →
+human reviews the diff.
+
 ## How it works
 
 ```
@@ -21,8 +39,7 @@ normalized_score = raw_score / (word_count / 100)
 
 Every match adds weighted points. The total is normalized by document length.
 A 500-word doc with 15 raw points scores 3.0. Default threshold is 3.0.
-Em dashes hard-fail regardless of score because humans almost never write
-them in technical docs.
+No single pattern fails a file — it's the accumulation that triggers.
 
 Scores are hidden from default output to avoid optimization pressure when
 feeding results to an LLM. Use `--score` to show them.
@@ -32,18 +49,68 @@ Code blocks and frontmatter are stripped before scanning. Only prose is scored.
 ## Usage
 
 ```bash
-python3 slop_md_lint.py docs/                          # scan a directory
-python3 slop_md_lint.py docs/ --threshold 5.0          # adjust threshold
-python3 slop_md_lint.py docs/ --json                   # machine-readable output
-python3 slop_md_lint.py docs/ -v                       # show passing files too
-python3 slop_md_lint.py docs/ --exclude 'reference/**' # skip paths
-python3 slop_md_lint.py --list-rules                   # print all rules
-python3 slop_md_lint.py --dump-config                  # print built-in defaults
-python3 slop_md_lint.py docs/ --writing-guide          # append writing guide to output
-python3 slop_md_lint.py docs/ --score                  # show numeric scores
+nix run github:hsjobeki/slop-md-lint -- docs/                          # scan a directory
+nix run github:hsjobeki/slop-md-lint -- docs/ --threshold 5.0          # adjust threshold
+nix run github:hsjobeki/slop-md-lint -- docs/ --type technical         # fixup guide
+nix run github:hsjobeki/slop-md-lint -- docs/ --json                   # machine-readable output
+nix run github:hsjobeki/slop-md-lint -- docs/ --score                  # show numeric scores
+nix run github:hsjobeki/slop-md-lint -- --list-rules                   # print all rules
+nix run github:hsjobeki/slop-md-lint -- --dump-config                  # print built-in defaults
 ```
 
 Exit 0 means clean. Exit 1 means flagged files.
+
+## Writing guide and fixup
+
+Three levels of LLM-friendly output, from simple to full:
+
+### `--writing-guide`
+
+Appends a fix-up prompt with grouped findings and line references.
+Generated from actual matches, not a static template.
+
+### `--type technical`
+
+Generates a multi-step fixup guide: built-in writing rules + findings.
+No config needed.
+
+```bash
+nix run github:hsjobeki/slop-md-lint -- docs/ --type technical
+```
+
+Output:
+```
+Step 1: Technical writing rules
+────────────────────────────────────────
+<built-in style rules>
+
+Step 2: Fix slop-lint findings
+────────────────────────────────────────
+<specific findings with line references>
+```
+
+### `--fixup` + TOML
+
+For project-specific rules, configure `[[fixup]]` in `.sloplint.toml`.
+`--type` and `--fixup` can be combined.
+
+```toml
+[[fixup]]
+label = "Project conventions"
+source = "docs/writing-conventions.md"
+```
+
+```bash
+nix run github:hsjobeki/slop-md-lint -- docs/ --type technical --fixup
+```
+
+## CI
+
+```yaml
+# GitHub Actions
+- name: Check docs for LLM slop
+  run: nix run github:hsjobeki/slop-md-lint -- docs/
+```
 
 ## What it catches
 
@@ -84,20 +151,17 @@ Multi-word patterns that are strong LLM indicators. Thirteen groups:
 | `rhetorical_questions` | 7 | "but what about", "so how do we", "you might be wondering" |
 | `tautologies` | 12 | "completely eliminate", "end result", "basic fundamentals", "very unique" |
 
-### Level 3: Formatting (5 rules, weight 1.0-1.5)
+### Level 3: Formatting (5 rules, weight 0.75-1.5)
 
 Punctuation and markdown patterns that betray LLM authorship.
 
-| Rule | Weight | Trigger | Hard fail |
-|---|---|---|---|
-| `em_dash` | 1.5 | ` — ` in prose | yes |
-| `bold_colon_list` | 1.5 | `- **Word:** rest` | no (2+ to trigger) |
-| `numbered_subheading` | 1.5 | `#### 1. Foo` | no |
-| `exclamation_in_prose` | 1.0 | `!` in non-heading text | no (3+ to trigger) |
-| `emoji_in_docs` | 1.0 | emoji characters | no (3+ to trigger) |
-
-Em dashes are hard fails. Humans writing technical docs do not produce
-this pattern. LLMs do, consistently.
+| Rule | Weight | Trigger |
+|---|---|---|
+| `em_dash` | 1.5 | ` — ` in prose |
+| `bold_colon_list` | 0.75 | `- **Word:** rest` (2+ to trigger) |
+| `numbered_subheading` | 1.5 | `#### 1. Foo` |
+| `exclamation_in_prose` | 1.0 | `!` in non-heading text (3+ to trigger) |
+| `emoji_in_docs` | 1.0 | emoji characters (3+ to trigger) |
 
 ### Level 4: Structural (6 checks, weight 2.0-3.0)
 
@@ -160,10 +224,9 @@ exclamation_in_prose = false
 monotony_ratio = 0.4
 tricolon_min_count = 5
 
-# Override hard-fail behavior
+# Override hard-fail behavior (none are hard-fail by default)
 [hard_fail]
-remove = ["em_dash"]
-add = ["numbered_subheading"]
+add = ["em_dash", "numbered_subheading"]
 
 # Writing guide: minimum category score to show fix advice
 [guide]
@@ -176,34 +239,6 @@ density = 2.0
 
 Requires Python 3.11+ for TOML parsing (uses `tomllib`). On older Python,
 install `tomli` or skip the config file (defaults work without it).
-
-## CI
-
-```yaml
-# GitHub Actions
-- name: Check docs for LLM slop
-  run: python3 slop_md_lint.py docs/
-```
-
-```bash
-# Pre-commit or local
-python3 slop_md_lint.py docs/ --json | jq '.[] | select(.flagged) | .path'
-```
-
-## Why not Vale?
-
-[Vale](https://github.com/errata-ai/vale) is the standard prose linter (5k stars, YAML rules, style packages
-for Google, Microsoft, Red Hat). Its existing rulesets (proselint, write-good)
-were built pre-LLM and catch bad writing in general. They overlap with maybe
-10% of what this tool checks.
-
-Vale can express vocabulary and phrase rules in its YAML format. It cannot do
-accumulated scoring (weighted totals normalized by document length), cross-section
-analysis, sentence-start monotony detection, paragraph density analysis, tricolon
-counting, or conditional formatting (`- **Word:**` is bad, but `**--flag**:` is fine).
-
-The two tools complement each other: Vale for general style, this for LLM-specific
-detection.
 
 ## Limitations
 
@@ -229,45 +264,6 @@ absorbs occasional noise.
 If you have non-standard markdown with heavy use of indented code blocks
 or HTML comments containing English prose, you may see false positives.
 In that case, raise the threshold or ignore specific words via config.
-
-## Tests
-
-```bash
-python3 tests/test_slop_md_lint.py
-```
-
-28 tests across 6 fixture files covering all five detection levels plus
-configuration overrides.
-
-## Writing guide (🚧 under construction)
-
-The `--writing-guide` flag appends a targeted fix-up prompt to the linter
-output. The guide is generated from the actual matches, not a static
-template. Each flagged file gets its own guide with only the relevant
-categories and specific line references.
-
-Categories only appear in the guide when their score meets a configurable
-threshold. Hard fails (em dashes, bold-colon lists) always appear. This
-means a file that only has em dashes gets a two-line guide, not a wall of
-text about vocabulary.
-
-```bash
-python3 slop_md_lint.py docs/ --writing-guide 2>&1 | your-llm-tool
-```
-
-Configure the per-category thresholds in `.sloplint.toml`:
-
-```toml
-[guide]
-vocabulary = 3.0   # only show vocab advice if 3+ points from vocabulary
-phrase = 2.0
-formatting = 0.0   # always show (hard fails bypass this anyway)
-structural = 2.0
-density = 2.0
-```
-
-The guide itself is not well-tuned yet. The hints per rule will improve
-as the tool gets used on real projects.
 
 ## Things LLMs do (written by an LLM)
 
@@ -323,6 +319,15 @@ Things learned while building and testing this tool:
 
 - **Like a cat bringing you a dead bird,** an LLM will proudly present its
   "improved" version with half the content missing.
+
+## Tests
+
+```bash
+nix build .#checks.tests
+```
+
+28 tests across 6 fixture files covering all five detection levels plus
+configuration overrides.
 
 ## Design
 
