@@ -1,17 +1,14 @@
 # slop-md-lint
 
-Style linter for technical markdown. Flags unreviewed LLM-generated docs
-by accumulated score across five rule levels (vocabulary, phrases,
-formatting, structure, information density). Single Python file, no
-dependencies. Not an LLM detector. Scoped to technical docs; blog posts,
-essays, and chat messages are out of scope.
+Markdown linter for LLM slop. Filler transitions, vague quantifiers,
+marketing adjectives — symptoms of writing that uses many words to say
+nothing. Flags them so the rewrite has to be concrete.
 
-> [!IMPORTANT]
-> This tool was written by an LLM and reviewed by a human.
->
-> - Does not replace human review
-> - Gates LLM-generated PRs by flagging obvious slop
-> - Feed the results back into your LLM, rebase, submit cleaner PRs
+Runs in CI, pre-commit, or locally with your favourite LLM in the loop
+for automatic fixing. Deterministic, offline, no tokens. Scoped to
+technical docs.
+
+> Ironically, written by an LLM. They know best what they do.
 
 ## Why slop-md-lint
 
@@ -33,18 +30,13 @@ human reviews the diff.
 
 ## How it works
 
-```
-normalized_score = raw_score / (word_count / 100)
-```
-
-Every match adds weighted points. The total is normalized by document length.
-A 500-word doc with 15 raw points scores 3.0. Default threshold is 3.0.
-No single pattern fails a file — it's the accumulation that triggers.
-
-Scores are hidden from default output to avoid optimization pressure when
-feeding results to an LLM. Use `--score` to show them.
+Every match adds weighted points, normalized by document length. A 500-word
+doc with 15 raw points scores `15 / (500/100) = 3.0`. Default threshold
+is 3.0. No single pattern fails a file — it's the accumulation that triggers.
 
 Code blocks and frontmatter are stripped before scanning. Only prose is scored.
+Scores are hidden from default output to avoid optimization pressure when
+feeding results to an LLM. `--score` shows them.
 
 ## Usage
 
@@ -60,48 +52,41 @@ nix run github:hsjobeki/slop-md-lint -- --dump-config                  # print b
 
 Exit 0 means clean. Exit 1 means flagged files.
 
-## Writing guide and fixup
+## Fixing flagged files
 
-Three levels of LLM-friendly output, from simple to full:
-
-### `--writing-guide`
-
-Appends a fix-up prompt with grouped findings and line references.
-Generated from actual matches, not a static template.
-
-### `--type technical`
-
-Generates a multi-step fixup guide: built-in writing rules + findings.
-No config needed.
+`--writing-guide` appends findings grouped by rule with line references
+and fix instructions. `--type technical` adds writing best practices
+(active voice, plain words, structure) on top so the LLM knows what
+good looks like, not just what's wrong.
 
 ```bash
 nix run github:hsjobeki/slop-md-lint -- docs/ --type technical
 ```
 
-Output:
 ```
+Fixup guide for: docs/setup.md
+<preamble: rules for applying fixes>
+
 Step 1: Technical writing rules
 ────────────────────────────────────────
-<built-in style rules>
+<active voice, plain words, structure, ...>
 
 Step 2: Fix slop-lint findings
 ────────────────────────────────────────
-<specific findings with line references>
+SOFT (fix only if filler, not the document's actual subject):
+  [corporate_marketing] (3x) → use plain English
+    L12: "leverages", L28: "Seamlessly", L35: "robust"
+  [filler_phrases] "It's worth noting" (1x) → delete; say the thing directly
+    L19
+  ...
 ```
 
-### `--fixup` + TOML
-
-For project-specific rules, configure `[[fixup]]` in `.sloplint.toml`.
-`--type` and `--fixup` can be combined.
+For project-specific rules, add `[[fixup]]` sections in `.sloplint.toml`:
 
 ```toml
 [[fixup]]
 label = "Project conventions"
 source = "docs/writing-conventions.md"
-```
-
-```bash
-nix run github:hsjobeki/slop-md-lint -- docs/ --type technical --fixup
 ```
 
 ## CI
@@ -242,30 +227,14 @@ install `tomli` or skip the config file (defaults work without it).
 
 ## Limitations
 
-The tool strips code blocks (`` ``` `` and `~~~`), inline code, and YAML
-frontmatter before scanning. Everything else is treated as prose. This is
-a deliberate choice to keep the tool simple and dependency-free rather than
-pulling in a full markdown parser.
+Strips fenced code blocks, inline code, and YAML frontmatter. Does not
+strip indented code blocks, HTML comments, link URLs, or fenced div
+markers. In practice this rarely causes false positives — the words the
+tool flags don't appear in code or URLs, and the accumulation model
+absorbs occasional noise. If it does, raise the threshold or ignore
+specific words via config.
 
-This means it does not strip:
-
-- Indented code blocks (4 spaces / 1 tab)
-- HTML comments (`<!-- ... -->`)
-- Link URLs (`[text](url)` scans both text and URL)
-- Autolinks (`<https://...>`)
-- Fenced div markers (`::: warning`)
-
-In practice this rarely matters. The words the tool flags ("delve",
-"comprehensive", "this ensures") do not appear in code blocks or URLs.
-Even if a stray match leaks from a URL, it contributes 1 point to a
-score that needs to hit 3.0 per 100 words. The accumulation model
-absorbs occasional noise.
-
-If you have non-standard markdown with heavy use of indented code blocks
-or HTML comments containing English prose, you may see false positives.
-In that case, raise the threshold or ignore specific words via config.
-
-## Things LLMs do (written by an LLM)
+## Things LLMs do
 
 Things learned while building and testing this tool:
 
@@ -328,9 +297,3 @@ nix build .#checks.tests
 
 28 tests across 6 fixture files covering all five detection levels plus
 configuration overrides.
-
-## Design
-
-One file. No classes beyond dataclasses. No dependencies beyond Python stdlib.
-Deterministic: same input always produces the same score. Suitable for CI
-gating, pre-commit hooks, and PR review automation.
