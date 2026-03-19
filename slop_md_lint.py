@@ -318,7 +318,7 @@ FORMATTING_RULES: dict[str, dict] = {
     "em_dash": {
         "pattern": r" \u2014 ",
         "weight": 1.5,
-        "hard_fail": True,
+        "hard_fail": False,
         "description": "em dash ( \u2014 )",
         "multiline": False,
         "hint": "replace with comma, period, or parentheses",
@@ -327,8 +327,10 @@ FORMATTING_RULES: dict[str, dict] = {
         # "- **Word:** rest" or "- **Word**: rest" -- colon inside or outside bold
         # But not CLI flags like **--flag**: or links like **[foo]**:
         # One is fine (e.g. a single definition). Two or more is the AI pattern.
+        # Weight is lower than other formatting rules because this is a
+        # legitimate pattern for definition lists.
         "pattern": r"^[-*]\s+\*\*(?![-\[])([^*:]+):?\*\*:?\s",
-        "weight": 1.5,
+        "weight": 0.75,
         "hard_fail": False,
         "description": "**Bold:** list pattern",
         "multiline": True,
@@ -535,6 +537,12 @@ def _generate_default_toml() -> str:
     for cat, val in DEFAULT_GUIDE_THRESHOLDS.items():
         lines.append(f"{cat} = {val}")
     lines += [
+        "",
+        "# Fixup steps: external style guides applied before the built-in",
+        "# writing guide. Use with --fixup flag. Source is a local file path.",
+        "# [[fixup]]",
+        '# label = "Technical writing rules"',
+        '# source = "/path/to/style-guide.md"',
     ]
     return "\n".join(lines) + "\n"
 
@@ -556,6 +564,7 @@ _KNOWN_KEYS = {
     "density",
     "hard_fail",
     "guide",
+    "fixup",
 }
 
 
@@ -612,6 +621,10 @@ class Config:
 
     # Guide thresholds: minimum category score to include fix advice
     guide_thresholds: dict[str, float] = field(default_factory=dict)
+
+    # Fixup steps: list of {"label": "...", "source": "..."} dicts.
+    # source is a local file path whose content is included in the fixup guide.
+    fixup_steps: list[dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Apply parsed DEFAULT_TOML so every field gets the right value.
@@ -684,6 +697,15 @@ class Config:
         if "guide" in data:
             for cat, val in data["guide"].items():
                 self.guide_thresholds[cat] = float(val)
+
+        if "fixup" in data:
+            steps = data["fixup"]
+            if isinstance(steps, list):
+                self.fixup_steps = [
+                    {"label": s.get("label", ""), "source": s.get("source", "")}
+                    for s in steps
+                    if isinstance(s, dict) and s.get("source")
+                ]
 
     @classmethod
     def from_toml_string(cls, text: str) -> "Config":
@@ -1321,10 +1343,12 @@ RULES:
 """
 
 
-def build_guide(result: FileResult, config: Config) -> str:
+def build_guide(result: FileResult, config: Config, include_preamble: bool = True) -> str:
     """Build a targeted writing guide from the actual matches in a FileResult.
 
     Groups matches by rule group, deduplicates, separates hard vs soft.
+    When include_preamble is False, skips the standalone preamble (used
+    when the guide is embedded inside a multi-step fixup guide).
     """
     thresholds = config.guide_thresholds
 
@@ -1351,7 +1375,10 @@ def build_guide(result: FileResult, config: Config) -> str:
     hard_matches = [m for m in eligible if m.hard_fail]
     soft_matches = [m for m in eligible if not m.hard_fail]
 
-    lines: list[str] = [_GUIDE_PREAMBLE, ""]
+    lines: list[str] = []
+    if include_preamble:
+        lines.append(_GUIDE_PREAMBLE)
+        lines.append("")
 
     if hard_matches:
         lines.append("HARD (always fix):")
@@ -1449,6 +1476,93 @@ def _compact_line_refs_with_words(matches: list[Match]) -> str:
     return ", ".join(parts)
 
 
+def _read_fixup_source(source: str) -> str | None:
+    """Read a fixup step source file. Returns content or None on failure."""
+    path = Path(source)
+    if not path.exists():
+        print(f"Warning: fixup source not found: {source}", file=sys.stderr)
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"Warning: could not read fixup source {source}: {e}", file=sys.stderr)
+        return None
+
+
+_FIXUP_PREAMBLE = """\
+Apply the following fixup guide to the document.
+Read ALL steps before making any changes.
+
+RULES:
+- Earlier steps define style rules. The final step lists specific findings.
+  Apply everything simultaneously, not sequentially.
+- For each finding, read the surrounding context. A word that is precise
+  and meaningful in context stays, even if flagged.
+- Fix HARD items unconditionally.
+- For SOFT items: fix only if the match is filler, not the document's
+  actual subject matter.
+- Keep all technical content, code blocks, links, and examples intact.
+- Do not change lines or sections not mentioned in the findings.
+- Do not swap one flagged word for another ("leverage" → "utilize").\
+"""
+
+
+def build_fixup_guide(result: FileResult, config: Config) -> str:
+    """Build a multi-step fixup guide from configured fixup steps + built-in guide.
+
+    Custom steps come first (establish context/rules), built-in slop-lint
+    guide last (apply specific fixes informed by those rules).
+    """
+    # Get findings without the standalone preamble — this guide has its own
+    findings = build_guide(result, config, include_preamble=False)
+    if not config.fixup_steps and not findings:
+        return ""
+
+    # Use the multi-step preamble only when there are custom steps.
+    # With findings only, the standalone guide preamble is better.
+    if not config.fixup_steps:
+        return build_guide(result, config, include_preamble=True)
+
+    lines: list[str] = [_FIXUP_PREAMBLE, ""]
+    step_num = 0
+
+    # Custom fixup steps first — establish rules/context
+    for step in config.fixup_steps:
+        content = _read_fixup_source(step["source"])
+        if content is None:
+            continue
+        step_num += 1
+        label = step.get("label") or step["source"]
+        lines.append(f"Step {step_num}: {label}")
+        lines.append("\u2500" * 40)
+        lines.append(content.rstrip())
+        lines.append("")
+
+    # Built-in slop-lint findings last
+    if findings:
+        step_num += 1
+        lines.append(f"Step {step_num}: Fix slop-lint findings")
+        lines.append("\u2500" * 40)
+        lines.append(findings.rstrip())
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ============================================================================
+# Built-in prompt types
+# ============================================================================
+
+# Map type names to prompt files shipped alongside the script.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+BUILTIN_TYPES: dict[str, dict[str, str]] = {
+    "technical": {
+        "label": "Technical writing rules",
+        "source": str(_SCRIPT_DIR / "prompts" / "technical-writing.md"),
+    },
+}
+
+
 # ============================================================================
 # CLI
 # ============================================================================
@@ -1509,6 +1623,17 @@ def main() -> None:
         help="Print the writing guide after flagged output (for LLM fix-up prompts)",
     )
     parser.add_argument(
+        "--fixup",
+        action="store_true",
+        help="Include configured fixup steps in the writing guide output (implies --writing-guide)",
+    )
+    parser.add_argument(
+        "--type",
+        choices=list(BUILTIN_TYPES.keys()),
+        default=None,
+        help="Use a built-in prompt type (implies --fixup). Choices: %(choices)s",
+    )
+    parser.add_argument(
         "--score",
         action="store_true",
         help="Show numeric scores in output (hidden by default to avoid optimization pressure)",
@@ -1555,6 +1680,15 @@ def main() -> None:
             config._apply_dict(data["tool"]["sloplint"], warn_unknown=True)
         else:
             config = Config.from_toml(config_path)
+
+    # --type implies --fixup implies --writing-guide
+    if args.type:
+        args.fixup = True
+        # Prepend built-in type prompt before any TOML-configured steps
+        builtin_step = BUILTIN_TYPES[args.type]
+        config.fixup_steps.insert(0, builtin_step)
+    if args.fixup:
+        args.writing_guide = True
 
     # CLI threshold overrides config
     threshold = args.threshold if args.threshold is not None else config.threshold
@@ -1616,107 +1750,120 @@ def main() -> None:
         print(json.dumps(output, indent=2))
         if flagged and args.writing_guide:
             for r in flagged:
-                guide = build_guide(r, config)
+                if args.fixup:
+                    guide = build_fixup_guide(r, config)
+                else:
+                    guide = build_guide(r, config)
                 if guide:
                     print(f"\n--- {r.path} ---", file=sys.stderr)
                     print(guide, file=sys.stderr)
     else:
-        for r in sorted(results, key=lambda r: r.normalized_score, reverse=True):
-            is_flagged = r.normalized_score > threshold or r.has_hard_fail
-            if not is_flagged and not args.verbose:
-                continue
-            if r.word_count == 0:
-                continue
+        # When --fixup is active, suppress detailed linter output.
+        # The fixup guide already contains the matches in LLM-friendly
+        # form. Showing both creates noise and optimization pressure.
+        if not args.fixup:
+            for r in sorted(results, key=lambda r: r.normalized_score, reverse=True):
+                is_flagged = r.normalized_score > threshold or r.has_hard_fail
+                if not is_flagged and not args.verbose:
+                    continue
+                if r.word_count == 0:
+                    continue
 
-            if r.has_hard_fail:
-                status = "HARD FAIL"
-            elif r.normalized_score > threshold:
-                status = "FLAGGED"
-            else:
-                status = "ok"
-            print(f"\n{'=' * 60}")
-            print(f"[{status}] {r.path}")
-            if args.score:
-                print(
-                    f"  words: {r.word_count}  raw: {r.raw_score:.1f}  normalized: {r.normalized_score:.2f}  (threshold: {threshold})"
-                )
-
-            if r.matches:
-                # Group by category for readability
-                by_cat: dict[str, list[Match]] = {}
-                for m in r.matches:
-                    by_cat.setdefault(m.category, []).append(m)
-
-                for cat in [
-                    "vocabulary",
-                    "phrase",
-                    "formatting",
-                    "structural",
-                    "density",
-                ]:
-                    cat_matches = by_cat.get(cat, [])
-                    if not cat_matches:
-                        continue
-
-                    if cat == "vocabulary":
-                        # Show only unique stems and total score, no lines/counts/samples.
-                        # The LLM must read the document and judge which uses are
-                        # domain terms vs filler.
-                        cat_score = sum(m.weight for m in cat_matches)
-                        unique_stems = list(dict.fromkeys(
-                            m.pattern for m in cat_matches
-                        ))
-                        stems_str = ", ".join(unique_stems)
-                        print(f"\n  [{cat}] +{cat_score:.1f} — {stems_str}")
-                        print(f"    Vocabulary words are often domain terms. Don't replace")
-                        print(f"    a word that is the topic of the document. Fix phrase and")
-                        print(f"    formatting issues first. If the score still exceeds the")
-                        print(f"    threshold due to domain vocabulary, that's acceptable.")
-                    else:
-                        print(f"\n  [{cat}]")
-                        for m in cat_matches:
-                            loc = f"L{m.line_num}" if m.line_num else "file"
-                            print(f"    {loc:>6}  ({m.weight:+.1f}) {m.pattern}")
-                            if m.text:
-                                preview = m.text[:PREVIEW_LENGTH] + (
-                                    "..." if len(m.text) > PREVIEW_LENGTH else ""
-                                )
-                                print(f"           {preview}")
-
-        # Summary table (only with --score)
-        if args.score:
-            epsilon = 0.2
-            nearby = [
-                r
-                for r in results
-                if r.raw_score > 0 and r.normalized_score > threshold - epsilon
-            ]
-            if nearby:
+                if r.has_hard_fail:
+                    status = "HARD FAIL"
+                elif r.normalized_score > threshold:
+                    status = "FLAGGED"
+                else:
+                    status = "ok"
                 print(f"\n{'=' * 60}")
-                print(f"  {'SCORE':>5}  {'RAW':>5}  {'WORDS':>5}  FILE")
-                print(f"  {'-----':>5}  {'---':>5}  {'-----':>5}  {'----'}")
-                for r in sorted(nearby, key=lambda r: r.normalized_score, reverse=True):
-                    marker = " ! " if r.normalized_score > threshold else " ~ "
+                print(f"[{status}] {r.path}")
+                if args.score:
                     print(
-                        f"{marker}{r.normalized_score:5.2f}  {r.raw_score:5.1f}  {r.word_count:5d}  {r.path}"
+                        f"  words: {r.word_count}  raw: {r.raw_score:.1f}  normalized: {r.normalized_score:.2f}  (threshold: {threshold})"
                     )
 
-        print(f"\n{'=' * 60}")
-        print(
-            f"Scanned {len(results)} files. {len(flagged)} flagged (threshold: {threshold})."
-        )
-        if flagged:
-            print()
-            print("Not every flagged instance needs fixing. Fix hard fails and")
-            print("clear filler. Do not modify content the linter didn't flag.")
+                if r.matches:
+                    # Group by category for readability
+                    by_cat: dict[str, list[Match]] = {}
+                    for m in r.matches:
+                        by_cat.setdefault(m.category, []).append(m)
+
+                    for cat in [
+                        "vocabulary",
+                        "phrase",
+                        "formatting",
+                        "structural",
+                        "density",
+                    ]:
+                        cat_matches = by_cat.get(cat, [])
+                        if not cat_matches:
+                            continue
+
+                        if cat == "vocabulary":
+                            # Show only unique stems and total score, no lines/counts/samples.
+                            # The LLM must read the document and judge which uses are
+                            # domain terms vs filler.
+                            cat_score = sum(m.weight for m in cat_matches)
+                            unique_stems = list(dict.fromkeys(
+                                m.pattern for m in cat_matches
+                            ))
+                            stems_str = ", ".join(unique_stems)
+                            print(f"\n  [{cat}] +{cat_score:.1f} — {stems_str}")
+                            print(f"    Vocabulary words are often domain terms. Don't replace")
+                            print(f"    a word that is the topic of the document. Fix phrase and")
+                            print(f"    formatting issues first. If the score still exceeds the")
+                            print(f"    threshold due to domain vocabulary, that's acceptable.")
+                        else:
+                            print(f"\n  [{cat}]")
+                            for m in cat_matches:
+                                loc = f"L{m.line_num}" if m.line_num else "file"
+                                print(f"    {loc:>6}  ({m.weight:+.1f}) {m.pattern}")
+                                if m.text:
+                                    preview = m.text[:PREVIEW_LENGTH] + (
+                                        "..." if len(m.text) > PREVIEW_LENGTH else ""
+                                    )
+                                    print(f"           {preview}")
+
+            # Summary table (only with --score)
+            if args.score:
+                epsilon = 0.2
+                nearby = [
+                    r
+                    for r in results
+                    if r.raw_score > 0 and r.normalized_score > threshold - epsilon
+                ]
+                if nearby:
+                    print(f"\n{'=' * 60}")
+                    print(f"  {'SCORE':>5}  {'RAW':>5}  {'WORDS':>5}  FILE")
+                    print(f"  {'-----':>5}  {'---':>5}  {'-----':>5}  {'----'}")
+                    for r in sorted(nearby, key=lambda r: r.normalized_score, reverse=True):
+                        marker = " ! " if r.normalized_score > threshold else " ~ "
+                        print(
+                            f"{marker}{r.normalized_score:5.2f}  {r.raw_score:5.1f}  {r.word_count:5d}  {r.path}"
+                        )
+
+            print(f"\n{'=' * 60}")
+            print(
+                f"Scanned {len(results)} files. {len(flagged)} flagged (threshold: {threshold})."
+            )
+            if flagged:
+                print()
+                print("Not every flagged instance needs fixing. Fix hard fails and")
+                print("clear filler. Do not modify content the linter didn't flag.")
 
         if flagged and args.writing_guide:
             for r in flagged:
-                guide = build_guide(r, config)
+                if args.fixup:
+                    guide = build_fixup_guide(r, config)
+                else:
+                    guide = build_guide(r, config)
                 if guide:
                     print()
                     print("=" * 60)
-                    print(f"Writing guide for: {r.path}")
+                    if args.fixup:
+                        print(f"Fixup guide for: {r.path}")
+                    else:
+                        print(f"Writing guide for: {r.path}")
                     print("=" * 60)
                     print(guide)
 

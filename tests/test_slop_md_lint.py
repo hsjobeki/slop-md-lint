@@ -84,13 +84,13 @@ def test_numbered_heading_detection() -> None:
     assert len(numbered) > 0, "sloppy.md should detect numbered sub-headings"
 
 
-def test_single_em_dash_hard_fails() -> None:
-    """A single em dash should flag the file even if the score is below threshold."""
+def test_single_em_dash_scores_but_no_hard_fail() -> None:
+    """A single em dash should contribute to the score but not hard-fail."""
     result = scan_file(TESTS_DIR / "one_em_dash.md")
-    assert result.has_hard_fail, "one_em_dash.md should be a hard fail"
-    hard_matches = [m for m in result.matches if m.hard_fail]
-    assert len(hard_matches) >= 1, "should have at least one hard-fail match"
-    assert any("em dash" in m.pattern for m in hard_matches)
+    assert not result.has_hard_fail, "one_em_dash.md should not be a hard fail"
+    em_matches = [m for m in result.matches if "em dash" in m.pattern]
+    assert len(em_matches) >= 1, "should detect the em dash"
+    assert em_matches[0].weight == 1.5, "em dash weight should be 1.5"
 
 
 def test_single_bold_colon_is_fine() -> None:
@@ -272,12 +272,12 @@ def test_config_disable_density() -> None:
     assert len(density) == 0, "No density matches when density is disabled"
 
 
-def test_config_remove_hard_fail() -> None:
-    """Removing a hard-fail rule should make it score-only."""
+def test_config_add_hard_fail() -> None:
+    """Adding a hard-fail rule should make it fail unconditionally."""
     config = Config()
-    config.no_hard_fail_rules = ["em_dash", "bold_colon_list"]
+    config.hard_fail_rules = ["em_dash"]
     result = scan_file(TESTS_DIR / "one_em_dash.md", config)
-    assert not result.has_hard_fail, "em_dash should not hard-fail when removed from hard_fail"
+    assert result.has_hard_fail, "em_dash should hard-fail when added to hard_fail"
 
 
 def test_config_weight_override() -> None:
